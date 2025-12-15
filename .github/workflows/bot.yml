@@ -1,0 +1,39 @@
+name: Discord Minecraft Status Bot
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 horas máximo (límite de GitHub Actions)
+    
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v3
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Ejecutar bot
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          MC_HOST: ${{ secrets.MC_HOST }}
+          MC_PORT: ${{ secrets.MC_PORT }}
+          CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
+          UPDATE_INTERVAL: ${{ secrets.UPDATE_INTERVAL }}
+          NOTIFICATION_CHANNEL_ID: ${{ secrets.NOTIFICATION_CHANNEL_ID }}
+        run: |
+          echo "🚀 Iniciando bot de Discord..."
+          echo "📡 Servidor: ${{ secrets.MC_HOST }}:${{ secrets.MC_PORT }}"
+          echo "📺 Canal: ${{ secrets.CHANNEL_ID }}"
+          npm start
+
