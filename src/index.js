@@ -1,6 +1,8 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, Events, EmbedBuilder } = require('discord.js');
 const { getMinecraftStatus } = require('./mcStatus');
+const { connectRCON, sendMessageToMinecraft, closeRCON } = require('./rcon');
+const { initializePlayer, playMusic, stopMusic, pauseResume, getQueue, skipTrack, createControlPanel, createPlayerEmbed } = require('./spotify');
 
 // Validar variables de entorno
 const requiredEnvVars = ['DISCORD_TOKEN', 'MC_HOST', 'MC_PORT', 'CHANNEL_ID'];
@@ -14,12 +16,14 @@ for (const envVar of requiredEnvVars) {
 // Configuración
 const UPDATE_INTERVAL = parseInt(process.env.UPDATE_INTERVAL) || 60000; // Por defecto 1 minuto
 const NOTIFICATION_CHANNEL_ID = process.env.NOTIFICATION_CHANNEL_ID || process.env.CHANNEL_ID; // Canal para notificaciones
+const DISCORD_TO_MC_CHANNEL_ID = process.env.DISCORD_TO_MC_CHANNEL_ID; // Canal para enviar mensajes a Minecraft
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildVoiceStates
   ]
 });
 
@@ -292,6 +296,187 @@ async function updateStatusMessage() {
   }
 }
 
+// Inicializar reproductor de música
+initializePlayer(client);
+
+// Listener para mensajes de Discord → Minecraft
+client.on(Events.MessageCreate, async message => {
+  // Ignorar mensajes del bot
+  if (message.author.bot) return;
+  
+  // Solo procesar mensajes del canal configurado
+  if (DISCORD_TO_MC_CHANNEL_ID && message.channel.id === DISCORD_TO_MC_CHANNEL_ID) {
+    const content = message.content.trim();
+    
+    // Ignorar mensajes vacíos
+    if (!content) return;
+    
+    // Formatear mensaje: "Usuario: Mensaje"
+    const formattedMessage = `${message.author.displayName || message.author.username}: ${content}`;
+    
+    // Enviar a Minecraft
+    const result = await sendMessageToMinecraft(formattedMessage);
+    
+    if (result.success) {
+      console.log(`📤 Mensaje enviado a Minecraft: ${formattedMessage}`);
+      // Opcional: agregar reacción de confirmación
+      try {
+        await message.react('✅');
+      } catch (error) {
+        // Ignorar errores de reacción
+      }
+    } else {
+      // Solo mostrar error si no es por falta de configuración
+      if (!result.error.includes('no está configurado')) {
+        console.error(`❌ Error al enviar mensaje a Minecraft: ${result.error}`);
+      }
+      try {
+        await message.react('❌');
+      } catch (error) {
+        // Ignorar errores de reacción
+      }
+    }
+  }
+});
+
+// Handler de interacciones (comandos y botones)
+client.on(Events.InteractionCreate, async interaction => {
+  // Manejar botones del panel de música
+  if (interaction.isButton()) {
+    const queue = getQueue(interaction.guild.id);
+    
+    if (!queue) {
+      await interaction.reply({ content: '❌ No hay música reproduciéndose', ephemeral: true });
+      return;
+    }
+
+    if (interaction.customId === 'music_pause') {
+      const result = await pauseResume(interaction.guild.id);
+      if (result.success) {
+        const embed = createPlayerEmbed(queue.currentTrack, queue);
+        const panel = createControlPanel(queue);
+        await interaction.update({ embeds: [embed], components: [panel] });
+      } else {
+        await interaction.reply({ content: `❌ ${result.error}`, ephemeral: true });
+      }
+      return;
+    }
+
+    if (interaction.customId === 'music_stop') {
+      const result = await stopMusic(interaction.guild.id);
+      if (result.success) {
+        await interaction.update({ content: '⏹️ Música detenida', embeds: [], components: [] });
+      } else {
+        await interaction.reply({ content: `❌ ${result.error}`, ephemeral: true });
+      }
+      return;
+    }
+
+    if (interaction.customId === 'music_skip') {
+      const result = await skipTrack(interaction.guild.id);
+      if (result.success) {
+        const newQueue = getQueue(interaction.guild.id);
+        if (newQueue && newQueue.currentTrack) {
+          const embed = createPlayerEmbed(newQueue.currentTrack, newQueue);
+          const panel = createControlPanel(newQueue);
+          await interaction.update({ embeds: [embed], components: [panel] });
+        } else {
+          await interaction.update({ content: '⏭️ Siguiente canción', embeds: [], components: [] });
+        }
+      } else {
+        await interaction.reply({ content: `❌ ${result.error}`, ephemeral: true });
+      }
+      return;
+    }
+
+    if (interaction.customId === 'music_queue') {
+      const queue = getQueue(interaction.guild.id);
+      if (!queue || !queue.tracks || queue.tracks.length === 0) {
+        await interaction.reply({ content: '📭 La cola está vacía', ephemeral: true });
+        return;
+      }
+
+      const tracks = queue.tracks.slice(0, 10).map((track, index) => 
+        `${index + 1}. **${track.title}** - ${track.author}`
+      ).join('\n');
+
+      const embed = new EmbedBuilder()
+        .setTitle('📋 Cola de Reproducción')
+        .setDescription(tracks)
+        .setColor(0x1DB954);
+      
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+      return;
+    }
+  }
+
+  // Manejar comandos slash
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === 'play') {
+    await interaction.deferReply();
+    
+    const query = interaction.options.getString('cancion', true);
+    const result = await playMusic(interaction, query);
+    
+    if (result.success) {
+      const embed = createPlayerEmbed(result.track, result.queue);
+      const panel = createControlPanel(result.queue);
+      
+      await interaction.editReply({ embeds: [embed], components: [panel] });
+    } else {
+      await interaction.editReply(`❌ Error: ${result.error}`);
+    }
+  }
+
+  if (interaction.commandName === 'stop') {
+    await interaction.deferReply();
+    
+    const result = await stopMusic(interaction.guild.id);
+    
+    if (result.success) {
+      await interaction.editReply('⏹️ Música detenida');
+    } else {
+      await interaction.editReply(`❌ ${result.error}`);
+    }
+  }
+
+  if (interaction.commandName === 'pause') {
+    await interaction.deferReply();
+    
+    const result = await pauseResume(interaction.guild.id);
+    
+    if (result.success) {
+      const action = result.paused ? '⏸️ Pausado' : '▶️ Reanudado';
+      await interaction.editReply(action);
+    } else {
+      await interaction.editReply(`❌ ${result.error}`);
+    }
+  }
+
+  if (interaction.commandName === 'queue') {
+    await interaction.deferReply();
+    
+    const queue = getQueue(interaction.guild.id);
+    
+    if (!queue || !queue.tracks || queue.tracks.length === 0) {
+      await interaction.editReply('📭 La cola está vacía');
+      return;
+    }
+
+    const tracks = queue.tracks.slice(0, 10).map((track, index) => 
+      `${index + 1}. **${track.title}** - ${track.author}`
+    ).join('\n');
+
+    const embed = new EmbedBuilder()
+      .setTitle('📋 Cola de Reproducción')
+      .setDescription(tracks)
+      .setColor(0x1DB954);
+    
+    await interaction.editReply({ embeds: [embed] });
+  }
+});
+
 client.once(Events.ClientReady, async () => {
   console.log(`✅ Bot conectado como ${client.user.tag}`);
   console.log(`📡 Monitoreando servidor: ${process.env.MC_HOST}:${process.env.MC_PORT}`);
@@ -300,6 +485,17 @@ client.once(Events.ClientReady, async () => {
   
   if (NOTIFICATION_CHANNEL_ID !== process.env.CHANNEL_ID) {
     console.log(`📢 Canal de notificaciones: ${NOTIFICATION_CHANNEL_ID}`);
+  }
+
+  if (DISCORD_TO_MC_CHANNEL_ID) {
+    console.log(`💬 Canal Discord → Minecraft: ${DISCORD_TO_MC_CHANNEL_ID}`);
+    if (process.env.RCON_PASSWORD) {
+      console.log(`🔌 RCON configurado - Los mensajes se enviarán a Minecraft`);
+      await connectRCON();
+    } else {
+      console.log(`⚠️ RCON no configurado - Los mensajes NO se enviarán a Minecraft`);
+      console.log(`💡 Para habilitar: Agrega RCON_PASSWORD y RCON_PORT al .env`);
+    }
   }
 
   // Actualizar inmediatamente al iniciar
@@ -318,6 +514,19 @@ client.on(Events.Error, error => {
 
 process.on('unhandledRejection', error => {
   console.error('Error no manejado:', error);
+});
+
+// Cerrar conexiones al salir
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Cerrando bot...');
+  await closeRCON();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\n🛑 Cerrando bot...');
+  await closeRCON();
+  process.exit(0);
 });
 
 // Conectar el bot

@@ -5,6 +5,30 @@ const commands = [
   {
     name: 'estado',
     description: 'Muestra el estado del servidor de Minecraft'
+  },
+  {
+    name: 'play',
+    description: 'Reproduce música desde Spotify o YouTube',
+    options: [
+      {
+        name: 'cancion',
+        type: 3, // STRING
+        description: 'Nombre de la canción o URL de Spotify/YouTube',
+        required: true
+      }
+    ]
+  },
+  {
+    name: 'stop',
+    description: 'Detiene la reproducción de música'
+  },
+  {
+    name: 'pause',
+    description: 'Pausa o reanuda la reproducción'
+  },
+  {
+    name: 'queue',
+    description: 'Muestra la cola de reproducción'
   }
 ];
 

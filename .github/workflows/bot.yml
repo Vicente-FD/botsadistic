@@ -23,6 +23,11 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      - name: Instalar FFmpeg (para música)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
       - name: Ejecutar bot
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
@@ -31,6 +36,10 @@ jobs:
           CHANNEL_ID: ${{ secrets.CHANNEL_ID }}
           UPDATE_INTERVAL: ${{ secrets.UPDATE_INTERVAL }}
           NOTIFICATION_CHANNEL_ID: ${{ secrets.NOTIFICATION_CHANNEL_ID }}
+          RCON_HOST: ${{ secrets.RCON_HOST }}
+          RCON_PORT: ${{ secrets.RCON_PORT }}
+          RCON_PASSWORD: ${{ secrets.RCON_PASSWORD }}
+          DISCORD_TO_MC_CHANNEL_ID: ${{ secrets.DISCORD_TO_MC_CHANNEL_ID }}
         run: |
           echo "🚀 Iniciando bot de Discord..."
           echo "📡 Servidor: ${{ secrets.MC_HOST }}:${{ secrets.MC_PORT }}"

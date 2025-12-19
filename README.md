@@ -4,6 +4,7 @@ Bot de Discord que monitorea automáticamente el estado de un servidor de Minecr
 
 ## 🚀 Características
 
+### Monitoreo del Servidor
 - **Actualización automática** en un canal específico (intervalo configurable, por defecto 1 minuto)
 - **Embeds mejorados** con formato profesional y colores según el estado
 - **Timestamp de última actualización** visible en cada mensaje
@@ -11,14 +12,26 @@ Bot de Discord que monitorea automáticamente el estado de un servidor de Minecr
 - **Estadísticas completas**:
   - Estado del servidor (Online/Offline)
   - Jugadores conectados (con lista de nombres)
-  - Versión del servidor
-  - MOTD (Message of the Day)
-  - Latencia del servidor
+  - Versión del servidor (si está disponible)
   - Uptime estimado desde la primera detección online
-- **Historial de cambios** mostrando los últimos cambios de estado
 - **Intervalo configurable** mediante variable de entorno
 - Manejo robusto de errores y timeouts
+
+### 💬 Integración Discord ↔ Minecraft
+- **Mensajes Discord → Minecraft**: Los mensajes de un canal específico se envían automáticamente al servidor usando RCON
+- Formato personalizado con `tellraw` (rojo, negrita)
+- Reacciones automáticas para confirmar envío
+
+### 🎵 Reproductor de Música
+- **Reproducción desde Spotify y YouTube**
+- Comandos slash: `/play`, `/stop`, `/pause`, `/queue`
+- Cola de reproducción
+- Control completo de reproducción
+
+### ⚙️ Configuración
 - Configuración mediante variables de entorno
+- Fácil de desplegar en GitHub Actions
+- Documentación completa
 
 ## 📋 Requisitos Previos
 
